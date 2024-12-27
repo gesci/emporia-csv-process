@@ -37,12 +37,19 @@ def process_file(csv_path, start_date, end_date):
         numeric_columns = filtered_data.select_dtypes(include=["number"])
         monthly_totals = numeric_columns.groupby(filtered_data["Month"]).sum()
         
+        # Ajouter un total par mois (somme de toutes les colonnes pour chaque mois)
+        monthly_totals["Total Mois"] = monthly_totals.sum(axis=1)
+
+        # Calculer un total global pour la période sélectionnée
+        total_period = monthly_totals["Total Mois"].sum()
+
         # Éclater les données : chaque colonne devient une ligne
         exploded_data = monthly_totals.reset_index().melt(id_vars=["Month"], var_name="Colonne", value_name="Valeur")
-        return monthly_totals, exploded_data
+
+        return monthly_totals, exploded_data, total_period
     except Exception as e:
         st.error(f"Erreur lors du traitement des données : {e}")
-        return None, None
+        return None, None, None
 
 # Titre de l'application
 st.title("Analyse des Données Énergétiques")
@@ -78,15 +85,17 @@ if uploaded_zip:
             st.error("La date de début doit être antérieure ou égale à la date de fin.")
         else:
             # Traiter les données et afficher les résultats
-            monthly_totals, exploded_data = process_file(csv_path, pd.Timestamp(start_date), pd.Timestamp(end_date))
+            monthly_totals, exploded_data, total_period = process_file(csv_path, pd.Timestamp(start_date), pd.Timestamp(end_date))
             if monthly_totals is not None and exploded_data is not None:
                 st.write("### Résultats par Mois (Tableau Agrégé)")
                 st.dataframe(monthly_totals)
+                
+                st.write(f"### Total pour la période sélectionnée : **{total_period:.2f}** kWh")
                 
                 st.write("### Résultats par Mois et par Colonne (Tableau Éclaté)")
                 st.dataframe(exploded_data)
                 
                 st.write("### Graphique des Totaux Mensuels")
-                st.bar_chart(monthly_totals)
+                st.bar_chart(monthly_totals["Total Mois"])
     else:
         st.error("Le fichier 1DAY.csv n'a pas été trouvé dans l'archive ZIP.")

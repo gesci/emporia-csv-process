@@ -1,72 +1,82 @@
 import streamlit as st
 import pandas as pd
+import zipfile
+import os
 
-def process_file(uploaded_file, start_date, end_date):
+def extract_csv_from_zip(zip_file, keyword="1DAY.csv"):
+    """Extrait un fichier CSV spécifique d'un fichier ZIP."""
+    with zipfile.ZipFile(zip_file, 'r') as z:
+        for file_name in z.namelist():
+            if keyword in file_name:
+                z.extract(file_name, path="extracted_files/")
+                return os.path.join("extracted_files", file_name)
+    return None
+
+def process_file(csv_path, start_date, end_date):
+    """Traite le fichier CSV, filtre par plage de dates, et calcule les totaux mensuels."""
     try:
-        # Lire le fichier
-        data = pd.read_excel(uploaded_file, engine='pyxlsb')
-
-        # Diviser les colonnes
-        data_split = data.iloc[:, 0].str.split(',', expand=True)
-        data_split.rename(columns={0: "Date"}, inplace=True)
-
-        # Convertir la colonne "Date" en datetime
-        data_split["Date"] = pd.to_datetime(data_split["Date"], errors="coerce")
-        data_cleaned = data_split.dropna(subset=["Date"])
-
-        # Filtrer les données selon la plage de dates
-        data_filtered = data_cleaned[(data_cleaned["Date"] >= start_date) & (data_cleaned["Date"] <= end_date)]
-
-        # Convertir toutes les autres colonnes en numériques
-        for col in data_filtered.columns[1:]:
-            data_filtered[col] = pd.to_numeric(data_filtered[col], errors="coerce")
-
-        # Ajouter une colonne "Month"
-        data_filtered["Month"] = data_filtered["Date"].dt.to_period("M")
-
-        # Sélectionner uniquement les colonnes numériques
-        numeric_columns = data_filtered.select_dtypes(include=["number"])
-
-        # Grouper par mois et calculer les totaux
-        monthly_totals = numeric_columns.groupby(data_filtered["Month"]).sum()
+        # Charger les données
+        data = pd.read_csv(csv_path)
+        data.rename(columns={"Time Bucket (Europe/Budapest)": "Date"}, inplace=True)
+        data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+        data.replace("No CT", pd.NA, inplace=True)
+        
+        # Convertir les colonnes en numériques
+        for col in data.columns:
+            if col != "Date":
+                data[col] = pd.to_numeric(data[col], errors="coerce")
+        
+        # Filtrer par plage de dates
+        filtered_data = data[(data["Date"] >= start_date) & (data["Date"] <= end_date)]
+        filtered_data["Month"] = filtered_data["Date"].dt.to_period("M")
+        
+        # Calculer les totaux mensuels
+        numeric_columns = filtered_data.select_dtypes(include=["number"])
+        monthly_totals = numeric_columns.groupby(filtered_data["Month"]).sum()
         return monthly_totals
-
     except Exception as e:
-        st.error(f"Erreur lors du traitement du fichier : {e}")
+        st.error(f"Erreur lors du traitement des données : {e}")
         return None
 
 # Titre de l'application
-st.title("Analyse des Données Mensuelles avec Filtres")
+st.title("Analyse des Données Énergétiques")
 
-# Charger un fichier
-uploaded_file = st.file_uploader("Chargez votre fichier Excel", type=["xlsb"])
+# Charger un fichier ZIP
+uploaded_zip = st.file_uploader("Chargez un fichier ZIP contenant le CSV 1DAY", type=["zip"])
 
-if uploaded_file:
-    # Lire un aperçu pour déterminer les plages de dates
-    data_preview = pd.read_excel(uploaded_file, engine='pyxlsb')
-    data_preview["Date"] = pd.to_datetime(data_preview.iloc[:, 0].str.split(',', expand=True)[0], errors="coerce")
-
-    # Afficher les premières lignes pour vérifier la structure
-    st.write("### Aperçu des Données")
-    st.dataframe(data_preview.head())
-
-    # Déterminer les dates min et max dans le fichier
-    min_date = data_preview["Date"].min()
-    max_date = data_preview["Date"].max()
-
-    # Sélection des dates de début et de fin
-    st.write("### Sélectionnez une plage de dates")
-    start_date = st.date_input("Date de début", value=min_date, min_value=min_date, max_value=max_date)
-    end_date = st.date_input("Date de fin", value=max_date, min_value=min_date, max_value=max_date)
-
-    # Assurez-vous que la date de début est avant la date de fin
-    if start_date > end_date:
-        st.error("La date de début doit être antérieure ou égale à la date de fin.")
+if uploaded_zip:
+    # Extraire le fichier contenant 1DAY.csv
+    csv_path = extract_csv_from_zip(uploaded_zip, "1DAY.csv")
+    
+    if csv_path:
+        st.success(f"Fichier trouvé et extrait : {csv_path}")
+        
+        # Lire un aperçu des données pour déterminer les plages de dates
+        data_preview = pd.read_csv(csv_path)
+        data_preview.rename(columns={"Time Bucket (Europe/Budapest)": "Date"}, inplace=True)
+        data_preview["Date"] = pd.to_datetime(data_preview["Date"], errors="coerce")
+        
+        st.write("### Aperçu des données")
+        st.dataframe(data_preview.head())
+        
+        # Obtenir les plages de dates
+        min_date = data_preview["Date"].min()
+        max_date = data_preview["Date"].max()
+        
+        # Sélecteurs de plage de dates
+        st.write("### Sélectionnez une plage de dates")
+        start_date = st.date_input("Date de début", value=min_date, min_value=min_date, max_value=max_date)
+        end_date = st.date_input("Date de fin", value=max_date, min_value=min_date, max_value=max_date)
+        
+        if start_date > end_date:
+            st.error("La date de début doit être antérieure ou égale à la date de fin.")
+        else:
+            # Traiter les données et afficher les résultats
+            monthly_totals = process_file(csv_path, pd.Timestamp(start_date), pd.Timestamp(end_date))
+            if monthly_totals is not None:
+                st.write("### Résultats par Mois")
+                st.dataframe(monthly_totals)
+                st.write("### Graphique des Totaux Mensuels")
+                st.bar_chart(monthly_totals)
     else:
-        # Appeler la fonction de traitement
-        results = process_file(uploaded_file, pd.Timestamp(start_date), pd.Timestamp(end_date))
-        if results is not None:
-            st.write("### Résultats par Mois")
-            st.dataframe(results)
-            st.write("### Graphique des Totaux Mensuels")
-            st.bar_chart(results)
+        st.error("Le fichier 1DAY.csv n'a pas été trouvé dans l'archive ZIP.")

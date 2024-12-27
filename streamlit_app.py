@@ -21,6 +21,9 @@ def process_file(csv_path, start_date, end_date):
         data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
         data.replace("No CT", pd.NA, inplace=True)
         
+        # Supprimer les colonnes vides (ou contenant uniquement des NaN)
+        data = data.dropna(axis=1, how="all")
+        
         # Convertir les colonnes en numériques
         for col in data.columns:
             if col != "Date":
@@ -33,10 +36,13 @@ def process_file(csv_path, start_date, end_date):
         # Calculer les totaux mensuels
         numeric_columns = filtered_data.select_dtypes(include=["number"])
         monthly_totals = numeric_columns.groupby(filtered_data["Month"]).sum()
-        return monthly_totals
+        
+        # Éclater les données : chaque colonne devient une ligne
+        exploded_data = monthly_totals.reset_index().melt(id_vars=["Month"], var_name="Colonne", value_name="Valeur")
+        return monthly_totals, exploded_data
     except Exception as e:
         st.error(f"Erreur lors du traitement des données : {e}")
-        return None
+        return None, None
 
 # Titre de l'application
 st.title("Analyse des Données Énergétiques")
@@ -72,10 +78,14 @@ if uploaded_zip:
             st.error("La date de début doit être antérieure ou égale à la date de fin.")
         else:
             # Traiter les données et afficher les résultats
-            monthly_totals = process_file(csv_path, pd.Timestamp(start_date), pd.Timestamp(end_date))
-            if monthly_totals is not None:
-                st.write("### Résultats par Mois")
+            monthly_totals, exploded_data = process_file(csv_path, pd.Timestamp(start_date), pd.Timestamp(end_date))
+            if monthly_totals is not None and exploded_data is not None:
+                st.write("### Résultats par Mois (Tableau Agrégé)")
                 st.dataframe(monthly_totals)
+                
+                st.write("### Résultats par Mois et par Colonne (Tableau Éclaté)")
+                st.dataframe(exploded_data)
+                
                 st.write("### Graphique des Totaux Mensuels")
                 st.bar_chart(monthly_totals)
     else:

@@ -52,8 +52,8 @@ def process_file(csv_path, start_date, end_date):
         return None, None, None
 
 # Titre de l'application
-st.title("Analyse des Données Énergétiques")
-
+st.title("Emporia Energy CSV")
+st.text("Analyse des données")
 # Charger un fichier ZIP
 uploaded_zip = st.file_uploader("Chargez un fichier ZIP contenant le CSV 1DAY", type=["zip"])
 
@@ -69,8 +69,8 @@ if uploaded_zip:
         data_preview.rename(columns={"Time Bucket (Europe/Budapest)": "Date"}, inplace=True)
         data_preview["Date"] = pd.to_datetime(data_preview["Date"], errors="coerce")
         
-        st.write("### Aperçu des données")
-        st.dataframe(data_preview.head())
+        #st.write("### Aperçu des données")
+        #st.dataframe(data_preview.head())
         
         # Obtenir les plages de dates
         min_date = data_preview["Date"].min()
@@ -87,13 +87,15 @@ if uploaded_zip:
             # Traiter les données et afficher les résultats
             monthly_totals, exploded_data, total_period = process_file(csv_path, pd.Timestamp(start_date), pd.Timestamp(end_date))
             if monthly_totals is not None and exploded_data is not None:
+
+                
+                st.write(f"#### Total pour la période : **{total_period:.2f}** kWh")
+                
+                st.write("### Résultats par Mois et par Compteur (Tableau Éclaté)")
+                st.dataframe(exploded_data)
+
                 st.write("### Résultats par Mois (Tableau Agrégé)")
                 st.dataframe(monthly_totals)
-                
-                st.write(f"### Total pour la période sélectionnée : **{total_period:.2f}** kWh")
-                
-                st.write("### Résultats par Mois et par Colonne (Tableau Éclaté)")
-                st.dataframe(exploded_data)
                 
                 st.write("### Graphique des Totaux Mensuels")
                 st.bar_chart(monthly_totals["Total Mois"])
